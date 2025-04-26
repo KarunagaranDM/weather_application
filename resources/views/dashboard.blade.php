@@ -139,7 +139,7 @@
                         <i class="bi bi-thermometer-half weather-icon mb-3"></i>
                         <h5 class="card-title">Temperature</h5>
                         <h2 class="display-4">{{ round($current['main']['temp']) }}°C</h2>
-                        <p class="card-text">Feels like {{ round($current['main']['feels_like']) }}°C</p>
+                        <p class="card-text">Feels like {{ round($current['main']['feels_like'] ?? 0) }}°C</p>
                     </div>
                 </div>
             </div>
@@ -150,7 +150,7 @@
                         <i class="bi bi-droplet weather-icon mb-3"></i>
                         <h5 class="card-title">Humidity</h5>
                         <h2 class="display-4">{{ $current['main']['humidity'] }}%</h2>
-                        <p class="card-text">{{ $current['weather'][0]['description'] }}</p>
+                        <p class="card-text">{{ $current['weather'][0]['description'] ?? 0 }}</p>
                     </div>
                 </div>
             </div>
@@ -285,53 +285,65 @@
                 }
             });
 
-            document.getElementById('useLocationBtn').addEventListener('click', function() {
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        function(position) {
-                            fetch(
-                                    `/weather-by-coords?lat=${position.coords.latitude}&lon=${position.coords.longitude}`
-                                )
-                                .then(response => response.json())
-                                .then(data => {
-                                    if (data.error) {
-                                        alert(data.error);
-                                    } else {
-                                        window.location.href =
-                                            `/?location=${encodeURIComponent(data.location)}`;
-                                    }
-                                })
-                                .catch(error => {
-                                    console.error('Error:', error);
-                                    alert('Failed to fetch weather data for your location.');
-                                });
-                        },
-                        function(error) {
-                            alert('Error getting location: ' + error.message);
-                        }
+            document.getElementById('useLocationBtn').addEventListener('click', async function() {
+                try {
+                    if (!navigator.geolocation) {
+                        throw new Error('Geolocation is not supported by your browser.');
+                    }
+
+                    const position = await new Promise((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {
+                            timeout: 10000,
+                            maximumAge: 60000,
+                            enableHighAccuracy: true
+                        });
+                    });
+
+                    const response = await fetch(
+                        `/weather-by-coords?lat=${position.coords.latitude}&lon=${position.coords.longitude}`
                     );
-                } else {
-                    alert('Geolocation is not supported by your browser.');
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Failed to fetch weather data');
+                    }
+
+                    const data = await response.json();
+
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+
+                    window.location.href = `/?location=${encodeURIComponent(data.location)}`;
+
+                } catch (error) {
+                    console.error('Location error:', error);
+                    alert(`Error: ${error.message}`);
                 }
             });
 
             if (window.location.search.indexOf('location=') === -1 && navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
-                    function(position) {
-                        fetch(
-                                `/weather-by-coords?lat=${position.coords.latitude}&lon=${position.coords.longitude}`
-                            )
-                            .then(response => response.json())
-                            .then(data => {
+                    async (position) => {
+                            try {
+                                const response = await fetch(
+                                    `/weather-by-coords?lat=${position.coords.latitude}&lon=${position.coords.longitude}`
+                                );
+                                const data = await response.json();
+
                                 if (!data.error) {
-                                    window.location.href =
-                                        `/?location=${encodeURIComponent(data.location)}`;
+                                    window.location.href = `/?location=${encodeURIComponent(data.location)}`;
                                 }
-                            });
-                    },
-                    function(error) {
-                        console.log('Location access denied or error:', error);
-                    }
+                            } catch (error) {
+                                console.log('Auto-location fetch failed:', error);
+                            }
+                        },
+                        (error) => {
+                            console.log('Geolocation permission denied or error:', error);
+                        }, {
+                            timeout: 5000,
+                            maximumAge: 30000
+                        }
                 );
             }
         });
